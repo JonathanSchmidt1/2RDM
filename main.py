@@ -69,42 +69,36 @@ def normalize_eq_6_abs(M, N_up, N_down):
                          [1/2. * (N_up + N_down) + (N_up - N_down)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]) / M.sum(['i','k'])
     return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
-def normalize_eq_6(M, N_up, N_down):
+def normalize_eq_6(M, N_up, N_down, S):
     #dim ('alpha','beta', 'i', 'k', 'l', 'j')
     M = torch.diagonal(M.rename(None), dim1=2, dim2=5).rename(None) #dim alpha beta k j i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
     M = M.rename('alpha', 'beta', 'i', 'k')
-    print('spinmatrix 6', torch.tensor([[N_down, 1 / 2. * (N_up + N_down) + (N_down - N_up) ** 2
-                                       + abs(N_up - N_down) * (abs(N_up - N_down) + 1)],
-                                      [1 / 2. * (N_up + N_down) + (N_up - N_down) ** 2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]))
-    norm = torch.tensor([[N_down, 1/2. * (N_up + N_down) + (N_down - N_up)**2 + (N_up - N_down) * ((N_up - N_down) + 1)],
-                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + (N_up - N_down) * ((N_up - N_down) + 1), N_up]]) / M.sum(['i','k'])
-    return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
+    constrain = (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
+                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1), N_up - S * (S + 1)]]).rename('alpha', 'beta'), M.sum(['i','k']))
+    return constrain
 
 
 
-def calc_E(D, t, U, N_alpha):
+def calc_E(D, t, U, N_beta):
     # dim ('alpha','beta', 'i', 'k', 'l', 'j')
-    U_term = torch.diagonal(M.rename(None), dim1=2, dim2=5) #dim alpha beta k l i
+    N_beta = N_beta.view(2,1).rename('alpha','off_diag_i')
+    U_term = torch.diagonal(D.rename(None), dim1=2, dim2=5) #dim alpha beta k l i
     U_term = torch.diagonal(U_term, dim1=2, dim2=3) #dim alpha beta i k
-    U_term = U * torch.diagonal(U_term, dim1=2, dim2=3) # dim alpha beta i
-    Uterm =  Uterm.rename('alpha', 'beta', 'i')
-    U_term = torch.sum(U_term[1][0], ['i'])
-
-    T_term = torch.diagonal(M.rename(None), dim1=2, dim2=5, offset=1) #dim alpha beta k l i,i=i+1
-    T_term = torch.diagonal(T_term, dim1=2, dim2=3) #dim alpha beta i k
-    T_term = -2 * t * 1 / (N_alpha - 1).view(2,1,1).rename('alpha', 'i', 'k')\
-             * torch.diagonal(U_term,dim1=0,dim2=1) #dim alpha i k
-    T_term.rename('alpha', 'i', 'k')
-    T_term = torch.sum(T_term, 'i', 'k', 'alpha')
-
+    U_term = torch.diagonal(U_term, dim1=2, dim2=3) # dim alpha beta i
+    U_term =  U_term.rename('alpha', 'beta', 'i')
+    U_term = U*torch.sum(U_term[1][0], ['i'])
+    rdm = calc_1RDM(D, torch.sum(N_beta))
+    T_term = torch.diagonal(rdm.rename(None), dim1=1, dim2=2, offset=1) + torch.diagonal(rdm.rename(None), dim1=1, dim2=2, offset=-1) #dim alpha beta k l i,i=i+1
+    T_term = T_term.rename('alpha','off_diag_i') #dim alpha beta i k
+    T_term = -t*T_term
+    T_term = torch.sum(T_term, ['alpha','off_diag_i'])
     return T_term + U_term
 
-def calc_1RDM(D):
-    # dim ('alpha','beta', 'i', 'k', 'l', 'j')
-    D = torch.diagonal(D.rename(None), dim1=3, dim2=4)  # alpha beta  i j k
-    D = torch.diagonal(D, dim1=0, dim2=1).permute(3,0,1,2).rename('alpha', 'i', 'j', 'k')  # alpha beta  i j
-    return torch.sum(D, 'k')
+def calc_1RDM(D,N):
+        # dim ('alpha','beta', 'i', 'k', 'l', 'j')
+        D = torch.diagonal(D.rename(None), dim1=3, dim2=4).rename('alpha','beta', 'i', 'j', 'k')  # alpha beta  i j k
+        return torch.sum(D, ['k', 'beta'])
 
 def constraint_eq_12(D, N_alpha, n_sites = None):
     if n_sites == None:
@@ -156,7 +150,8 @@ delta_lk = torch.eye(n_sites).view(1, 1, 1, n_sites, n_sites, 1).repeat(2, 2, n_
     'alpha', 'beta', 'i', 'k', 'l', 'j')
 delta_ij = torch.eye(n_sites).view(1, 1, n_sites, 1, 1, n_sites).repeat(2, 2, 1, n_sites, n_sites, 1).rename(
     'alpha', 'beta', 'i', 'k', 'l', 'j')
-
+delta_alphabeta = torch.eye(2).view(2, 2, 1, 1, 1, 1).repeat(1, 1, n_sites, n_sites, n_sites, n_sites).rename(
+        'alpha', 'beta', 'i', 'k', 'l', 'j')
 N_up = 2.0
 N_down = 3.0
 M  = torch.rand(2,2,3,3,3,3)
@@ -164,24 +159,14 @@ M = hermitian(M)
 #M = positive_semidefinite(M)
 M = antisymmetrize(M)
 a = normalize_eq_4_5(delta_ij*delta_lk*M, N_up = N_up, N_down = N_down)
-print('a1', a.rename(None).flatten())
-a = normalize_eq_4_5(M, N_up = N_up, N_down = N_down)
-print('a1', a.rename(None).flatten())
+E_0 = -3.
+t =2
+a= torch.tensor([E_0**2, -2*t*E_0,-2*t*E_0, E_0**2]).view(4,1)
+b= torch.tensor([-2*t*E_0, 4*t**2, 4*t**2, -2*t*E_0]).view(4,1)
 
-a2 = normalize_eq_4_5(M-delta_ij*delta_lk*M+delta_ij*delta_lk*M*a, N_up = N_up, N_down = N_down)
-print('a2', a2.rename(None).flatten())
-a2 = normalize_eq_4_5(M * a, N_up = N_up, N_down = N_down)
-print('a2', a2.rename(None).flatten())
+D = torch.stack((a,b,b,a), axis=-1).view(1,1,2,2,2,2).repeat(2,2,1,1,1,1)-delta_alphabeta*torch.stack((a,b,b,a), axis=-1).view(1,1,2,2,2,2).repeat(2,2,1,1,1,1)
+1rdm = torch.tensor([[4*t**2+E_0**2, -4*t*E_0],[-4*t*E_0,  4*t**2+E_0**2]])
 
-b = normalize_eq_6(M, N_up = N_up, N_down = N_down)
-print('b1', b.rename(None).flatten())
-b = normalize_eq_6(M-delta_ij*delta_lk*M+delta_ij*delta_lk*M*a, N_up = N_up, N_down = N_down)
-print('b a2', b.rename(None).flatten())
-b2 = normalize_eq_6(M - delta_il * delta_jk * M - delta_ij * delta_lk * M
-                    + delta_ij * delta_lk * M * a + delta_il * delta_jk * M *b, N_up = N_up, N_down = N_down)
-print('b2 a2', b2.rename(None).flatten())
-a2 = normalize_eq_4_5(b*a*M, N_up = N_up, N_down = N_down)
-print(a2.rename(None).flatten())
 #print(M_WF)
 #print(M_WF[:,0]+M_WF[:,:,0])
 #print(torch.where(M_WF>0.0001))
