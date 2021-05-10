@@ -52,23 +52,20 @@ def normalize_eq_4_5(M, N_up, N_down):
     norm = torch.where(torch.abs(M.sum(['i','k'])).rename(None)>0.00000001, torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]]) / M.sum(['i','k']).rename(None), torch.zeros(2,2))
     return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
-def normalize_eq_6_abs(M, N_up, N_down):
-    #dim ('alpha','beta', 'i', 'k', 'l', 'j')
-    M = torch.diagonal(M.rename(None), dim1=2, dim2=5).rename(None) #dim alpha beta k j i
-    M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
-    M = M.rename('alpha', 'beta', 'i', 'k')
-    norm_correct, norm = torch.tensor([[N_down, 1/2. * (N_up + N_down) + (N_down - N_up)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1)],
-                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]), M.sum(['i','k'])
-    return norm_correct.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j'), norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
-
 def normalize_eq_6(M, N_up, N_down, S):
     #dim ('alpha','beta', 'i', 'k', 'l', 'j')
-    M = torch.diagonal(M.rename(None), dim1=2, dim2=5).rename(None) #dim alpha beta k j i
+    print(S)
+    M = torch.diagonal(M.rename(None), dim1=2, dim2=4).rename(None) #dim alpha beta k j i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
     M = M.rename('alpha', 'beta', 'i', 'k')
-    norm_correct, norm =  (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
-                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1), N_up - S * (S + 1)]]).rename('alpha', 'beta'), M.sum(['i','k']))
-    return norm_correct.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j'), norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
+    #norm_correct, norm =  (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
+    #                     [1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1), N_up - S * (S + 1)]]).rename('alpha', 'beta'), M.sum(['i','k']))
+    norm_correct = torch.tensor([1 / 2. * (N_up + N_down) + (N_down - N_up) ** 2 - S * (S + 1),
+                                        1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1)])
+    norm = M.sum(['i','k'])
+    norm = torch.stack((norm[0,1], norm[1,0]))
+    print(norm_correct, norm, norm.shape)
+    return norm_correct.rename(None).view(2, 1, 1, 1, 1), norm.rename(None).view(2,1, 1, 1, 1)
 
 
 
@@ -97,6 +94,8 @@ def constraint_eq_12(D, N, n_sites = None):
         n_sites = D.shape[-1]
     else:
         pass
+    # dim ('alpha','beta', 'i', 'k', 'l', 'j')
+
     delta_alphabeta = torch.eye(2).view(2, 2, 1, 1, 1, 1).repeat(1, 1, n_sites, n_sites, n_sites, n_sites).rename(
         'alpha', 'beta', 'i', 'k', 'l', 'j')
     delta_il = torch.eye(n_sites).view(1, 1, n_sites, 1, n_sites, 1).repeat(2, 2, 1, n_sites, 1, n_sites).rename(
@@ -118,15 +117,18 @@ def constraint_eq_12(D, N, n_sites = None):
                 - delta_lk*rdm_alpha_i_j - delta_ij*rdm_alpha_k_l + D
     return constraint
 
-def constraint_eq_13(D, N_alpha, n_sites = None):
-    rdm = calc_1RDM(D)
-    rdm_alpha_jj = torch.diagonal(rdm.rename(None), dim1=-2, dim2=-1).view(2, 1, 1, 1, n_sites, 1)\
-        .rename('alpha', 'beta', 'i', 'k', 'l', 'j')
-
+def constraint_eq_13(D, N, n_sites = None):
+    if n_sites == None:
+        n_sites = D.shape[-1]
+    else:
+        pass
+    rdm = calc_1RDM(D, N)
+    # dim ('alpha','beta', 'i', 'k', 'l', 'j')
+    rdm_alpha_i_j = rdm.rename(None).view(2, 1, n_sites, 1, 1, n_sites).repeat(1, 2, 1, n_sites, n_sites, 1).rename(
+        'alpha', 'beta', 'i', 'k', 'l', 'j')
     delta_lk = torch.eye(n_sites).view(1, 1, 1, n_sites, n_sites, 1).repeat(2, 2, n_sites, 1, 1, n_sites).rename(
         'alpha', 'beta', 'i', 'k', 'l', 'j')
-    N_alpha = N_alpha.view(2, 1, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
-    constraint = delta_lk/(N_alpha-1) * rdm_alpha_jj + D
+    constraint = delta_lk*rdm_alpha_i_j - D
     return constraint
 
 if __name__ == "main":
