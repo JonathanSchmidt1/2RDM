@@ -12,7 +12,7 @@ def positive_semidefinite(M, n_sites = None):
         n_sites = M.shape[-1]
     else:
         pass
-    return torch.matmul(M.rename(None).view(n_sites**2,n_sites**2), M.rename(None).view(n_sites**2,n_sites**2).T).view(3,3,3,3)
+    return torch.matmul(M.rename(None).view(n_sites**2,n_sites**2), M.rename(None).view(n_sites**2,n_sites**2).T).view(n_sites,n_sites,n_sites,n_sites)
 
 def hermitian(M):
     return (M + M.rename(None).permute(2,3,0,1))/2
@@ -36,6 +36,7 @@ def test_antisymmetrize(M):
         raise ValueError
 
 def test_hermitian(M):
+    print(M.shape)
     if torch.allclose(M, M.permute(0, 1, 4, 5, 2, 3)):
         return True
     else:
@@ -48,7 +49,7 @@ def normalize_eq_4_5(M, N_up, N_down):
     M = M.rename('alpha', 'beta', 'i', 'k')
 #    print(M.sum(['i','k']))
 #    print('spinmatrix 45',torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]]))
-    norm = torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]]) / M.sum(['i','k'])
+    norm = torch.where(torch.abs(M.sum(['i','k'])).rename(None)>0.00000001, torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]]) / M.sum(['i','k']).rename(None), torch.zeros(2,2))
     return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
 def normalize_eq_6_abs(M, N_up, N_down):
@@ -56,20 +57,18 @@ def normalize_eq_6_abs(M, N_up, N_down):
     M = torch.diagonal(M.rename(None), dim1=2, dim2=5).rename(None) #dim alpha beta k j i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
     M = M.rename('alpha', 'beta', 'i', 'k')
-    print('spinmatrix 6', torch.tensor([[N_down, 1/2. * (N_up + N_down) + (N_down - N_up)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1)],
-                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]))
-    norm = torch.tensor([[N_down, 1/2. * (N_up + N_down) + (N_down - N_up)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1)],
-                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]) / M.sum(['i','k'])
-    return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
+    norm_correct, norm = torch.tensor([[N_down, 1/2. * (N_up + N_down) + (N_down - N_up)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1)],
+                         [1/2. * (N_up + N_down) + (N_up - N_down)**2 + abs(N_up - N_down) * (abs(N_up - N_down) + 1), N_up]]), M.sum(['i','k'])
+    return norm_correct.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j'), norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
 def normalize_eq_6(M, N_up, N_down, S):
     #dim ('alpha','beta', 'i', 'k', 'l', 'j')
     M = torch.diagonal(M.rename(None), dim1=2, dim2=5).rename(None) #dim alpha beta k j i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
     M = M.rename('alpha', 'beta', 'i', 'k')
-    constrain = (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
+    norm_correct, norm =  (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
                          [1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1), N_up - S * (S + 1)]]).rename('alpha', 'beta'), M.sum(['i','k']))
-    return constrain
+    return norm_correct.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j'), norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
 
 
@@ -157,7 +156,7 @@ if __name__ == "main":
     U= E_0-4*t**2/E_0
     D = (torch.stack((a,b,b,a), axis=-1).view(1,1,2,2,2,2).repeat(2,2,1,1,1,1)-delta_alphabeta*torch.stack((a,b,b,a),axis=-1).
          view(1,1,2,2,2,2).repeat(2,2,1,1,1,1))\
-        #/(8*t**2+2*E_0**2)
+        /(8*t**2+2*E_0**2)
 
     rdm = torch.tensor([[4*t**2+E_0**2, -4*t*E_0],[-4*t*E_0,  4*t**2+E_0**2]])/(8*t**2+2*E_0**2)
     #print(constraint_eq_12(D,2))
@@ -165,3 +164,4 @@ if __name__ == "main":
 #print(M_WF)
 #print(M_WF[:,0]+M_WF[:,:,0])
 #print(torch.where(M_WF>0.0001))
+
