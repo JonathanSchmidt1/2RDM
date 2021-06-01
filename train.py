@@ -66,11 +66,11 @@ U= E_0-4*t**2/E_0
 #U=2
 D = TwoRDM(2, 4., 2., 2., 0.)
 optimizer = torch.optim.Adam(D.parameters(), lr=0.01)
-for i in range(10000):
+for i in range(1000000):
     optimizer.zero_grad()
     E, constrain_6, constrain_7 = D.forward(t, U)
-    print(E)#, constrain_10)
-    loss = constrain_6 + constrain_7 + E
+    print(E, constrain_6, constrain_7)#, constrain_10)
+    loss = 10e16 * constrain_6 + 10e16 * constrain_7 + E
     loss.backward()
     optimizer.step()
 
