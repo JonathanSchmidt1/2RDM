@@ -12,7 +12,8 @@ def positive_semidefinite(M, n_sites = None):
         n_sites = M.shape[-1]
     else:
         pass
-    return torch.matmul(M.rename(None).view(n_sites**2,n_sites**2), M.rename(None).view(n_sites**2,n_sites**2).T).view(n_sites,n_sites,n_sites,n_sites)
+    return torch.matmul(M.rename(None).permute(0,1,3,2).reshape(n_sites**2,n_sites**2), M.rename(None).permute(0,1,3,2)
+                        .reshape(n_sites**2,n_sites**2).T).view(n_sites,n_sites,n_sites,n_sites).permute(0,1,3,2)
 
 def hermitian(M):
     return (M + M.rename(None).permute(2,3,0,1))/2
@@ -22,6 +23,9 @@ def antisymmetrize(M):
     M = M - M.permute(0, 1, 3, 2) - M.permute(1, 0, 2, 3)\
               + M.permute(1, 0, 3, 2)
     return M
+
+
+
 
 def test_antisymmetrize(M):
     aM = M.clone().rename(None)
@@ -35,6 +39,9 @@ def test_antisymmetrize(M):
         print(one, two, three, four)
         raise ValueError
 
+
+
+
 def test_hermitian(M):
     print(M.shape)
     if torch.allclose(M, M.permute(0, 1, 4, 5, 2, 3)):
@@ -42,7 +49,7 @@ def test_hermitian(M):
     else:
         raise ValueError
 
-def normalize_eq_4_5(M, N_up, N_down):
+def normalize_eq_4_5_old(M, N_up, N_down):
     #dim ('alpha','beta', 'i', 'k', 'l', 'j')
     M = torch.diagonal(M.rename(None), dim1=2, dim2=5) #dim alpha beta k l i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
@@ -52,20 +59,32 @@ def normalize_eq_4_5(M, N_up, N_down):
     norm = torch.where(torch.abs(M.sum(['i','k'])).rename(None)>0.00000001, torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]]) / M.sum(['i','k']).rename(None), torch.zeros(2,2))
     return norm.rename(None).view(2, 2, 1, 1, 1, 1).rename('alpha','beta', 'i', 'k', 'l', 'j')
 
-def normalize_eq_6(M, N_up, N_down, S):
+
+def normalize_eq_4_5(M, N_up, N_down):
     #dim ('alpha','beta', 'i', 'k', 'l', 'j')
-    print(S)
+    M = torch.diagonal(M.rename(None), dim1=2, dim2=5) #dim alpha beta k l i
+    M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
+    M = M.rename('alpha', 'beta', 'i', 'k')
+    norm_true = torch.tensor([[N_down*(N_down-1), N_up*N_down],[N_up*N_down, N_up*(N_up-1)]])
+    norm = M.sum(['i','k'])
+    #print('constrain 4,5', norm_true, norm)
+    return norm_true.rename(None).view(2, 2).rename('alpha','beta'),\
+           norm.rename(None).view(2, 2).rename('alpha','beta')
+
+
+
+def normalize_eq_7(M, N_up, N_down, S):
+    #dim ('alpha','beta', 'i', 'k', 'l', 'j')
+    #print(S)
     M = torch.diagonal(M.rename(None), dim1=2, dim2=4).rename(None) #dim alpha beta k j i
     M = torch.diagonal(M, dim1=2, dim2=3) #dim alpha beta i k
     M = M.rename('alpha', 'beta', 'i', 'k')
-    #norm_correct, norm =  (torch.tensor([[N_down - S * (S + 1), 1/2. * (N_up + N_down) + (N_down - N_up)**2 - S * (S + 1)],
-    #                     [1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1), N_up - S * (S + 1)]]).rename('alpha', 'beta'), M.sum(['i','k']))
     norm_correct = torch.tensor([1 / 2. * (N_up + N_down) + (N_down - N_up) ** 2 - S * (S + 1),
-                                        1/2. * (N_up + N_down) + (N_up - N_down)**2 + - S * (S + 1)])
+                                        1/2. * (N_up + N_down) + (N_up - N_down)**2 - S * (S + 1)])
     norm = M.sum(['i','k'])
     norm = torch.stack((norm[0,1], norm[1,0]))
-    print(norm_correct, norm, norm.shape)
-    return norm_correct.rename(None).view(2, 1, 1, 1, 1), norm.rename(None).view(2,1, 1, 1, 1)
+    #print('constrain 7', norm_correct, norm)
+    return norm_correct.rename(None).view(2,), norm.rename(None).view(2,)
 
 
 
